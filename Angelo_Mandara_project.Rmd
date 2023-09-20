@@ -1,0 +1,1142 @@
+---
+title: "Bayesian insights into predicting math scores"
+author: "Angelo Mandara"
+date: "2023-06-26"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+options(repos = "https://cloud.r-project.org")
+library(gplots)
+library(coda)
+library(R2jags)
+library(mcmcplots)
+library(cowplot)
+library(knitr)
+library(corrplot)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(mcmcse)
+data <- read.csv('StudentsPerformance.csv', sep=',')
+```
+
+
+
+
+
+
+<font size="5"> **1. Dataset Overview and Illustration **</font>
+
+
+Data for this study came from Kaggle, a well-known website for data science and machine learning competitions. You can access the specified dataset at the given [link](https://www.kaggle.com/datasets/spscientist/students-performance-in-exams).
+
+Researchers, data scientists, and practitioners may access and analyse a wide range of real-world data thanks to the vast range of datasets provided by the community on Kaggle. Examining the connections between academic achievement and demographic variables is made possible by this dataset, which focuses on students' grades in various areas. For consistent and trustworthy analysis, the Kaggle platform makes sure that the dataset has been vetted, packaged, and made available to users.
+
+The goal of this study is to evaluate students' performance across a range of courses, with a focus on forecasting mathematics outcomes based on a variety of demographic and academic variables. The dataset includes data on reading, writing, math, gender, race/ethnicity, parental education level, lunch choice, exam preparation course completion, and gender.
+
+The major objective of this project is to construct a **regression model that makes use of Bayesian inference to forecast results in mathematics depending on available factors**. Understanding the variables that affect arithmetic performance can give educators and decision-makers new perspectives on how to raise student achievement
+
+Why this study can be helpful:
+
+- Math score predictions can offer insightful information about a student's academic achievement, according to the **Academic achievement Assessment**. It enables teachers to recognise kids who might require more assistance or resources in mathematics and to design interventions accordingly.
+
+- **Identifying Influential elements**: Examining the correlation between math test results and different demographic and academic variables can aid in determining which elements have the greatest influence on a student's success. This knowledge can direct educational initiatives and policies aimed at enhancing math instruction.
+
+The dataset consists of the following variables:
+
+- **Gender**: Categorical variable indicating the gender of the student.
+
+- **Race/Ethnicity**: Categorical variable representing the race or ethnicity of the student.
+
+- **Parental Level of Education**: Categorical variable indicating the highest level of education attained by the student's parents.
+
+- **Lunch**: Categorical variable indicating whether the student receives free/reduced lunch or standard lunch.
+
+- **Test Preparation Course**: Categorical variable indicating whether the student completed a test preparation course.
+
+- **Reading Score**: Numerical variable representing the score obtained by the student in the reading subject.
+
+- **Writing Score**: Numerical variable representing the score obtained by the student in the writing subject.
+
+- **Math Score**: Numerical variable representing the **target** variable, the score obtained by the student in the math subject.
+
+Let's have a look of the first 10 rows of the dataset to have an idea:
+
+```{r}
+head(data,10)
+```
+
+Let's see also some summaries of the target variable:
+```{r}
+print(summary(data$math.score))
+```
+
+There is some simmetry, let's plot it:
+
+```{r echo=FALSE, fig.width=5 ,fig.height=5, fig.align='center'}
+# Plot for Math Score
+initial_plot <- function(data, target, string){
+  ggplot(data) +
+  geom_histogram(aes(x = target, y = after_stat(density)), fill = "steelblue", color = "white", bins = 20) +
+  geom_density(aes(x = target), color = "red") +
+  labs(x = string, y = "Density") +
+  ggtitle(paste("Distribution of", string)) +
+  theme(
+    plot.title = element_text(size = 12, color = "blue", hjust = 0.5),  # Adjust size, color, and alignment
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm")  # Adjust the margin to reduce the plot size
+  ) 
+}
+
+initial_plot(data,data$math.score,'Math Score')
+#initial_plot(data,data$reading.score,'Reading Score')
+#initial_plot(data,data$writing.score,'Writing Score')
+
+
+targets <- data[, c("math.score", "reading.score", "writing.score")]
+
+# Calculate the correlation matrix
+#cor_matrix <- cor(targets)
+
+#corrplot(cor_matrix, method = "number", type = "lower", tl.col = "black",
+#         tl.srt = 45, tl.cex = 0.8, number.cex = 0.8)
+
+```
+
+After analyzing the plot of the target variable, it can be observed that the distribution of the math scores is approximately normal, centered around 66. 
+
+Let's do some studies about the datas. 
+
+```{r echo=FALSE , fig.width=4 ,fig.height=4}
+plot_figure <- function(data, target, variable, name, string){
+  ggplot(data, aes(x = target)) +
+    geom_density(aes(fill = variable), alpha = 0.5) +
+    labs(x = name, y = "Density", fill = string) +
+    scale_color_manual(values = c("red", "blue")) +
+    scale_fill_manual(values = c("red", "blue")) +  # Set the fill colors
+    theme(
+      plot.title = element_text(size = 12, color = "blue", hjust = 0.5),  # Adjust size, color, and alignment
+      plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm")  # Adjust the margin to reduce the plot size
+    )
+}
+
+box <- function(data, target, variable, x_label, target_label){
+  # Get unique levels of the variable
+  unique_levels <- unique(variable)
+
+  # Generate a color palette with sufficient colors
+  colors <- rainbow(length(unique_levels))
+  
+  ggplot(data, aes(x = variable, y = target, fill = variable)) +
+    geom_boxplot() +
+    labs(x = x_label, y = target_label) +
+    scale_fill_manual(values = colors) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+ 
+```
+
+
+```{r echo=FALSE, fig.width=4 ,fig.height=4}
+
+plot_figure(data, data$math.score, data$gender, 'Math Score', 'Gender')
+
+plot_figure(data, data$math.score, data$test.preparation.course, 'Math Score', 'Test Preparation')
+
+plot_figure(data, data$math.score, data$lunch, 'Math Score', 'Lunch Type')
+
+race_plot <- box(data, data$math.score, data$race.ethnicity, 'Race', 'Math Score')
+race_plot
+
+```
+
+The density plot of the Math Score based on Gender shows that, in general, male students tend to have higher grades compared to female students for the higher scores. This observation suggests a potential gender difference in math performance.
+
+Similarly, the density plot based on Test Preparation indicates that students who completed the test preparation course tend to have higher math scores compared to those who didn't. This finding suggests that the test preparation course may positively impact math performance.
+
+Regarding the lunch type, the density plot shows that students with a standard lunch tend to have slightly higher math scores compared to students with a free/reduced lunch. This finding may suggest that the type of lunch could be associated with math performance, although the difference appears to be relatively small.
+
+For the analysis of race/ethnicity I have used box plots, that show the median, quartiles, and potential outliers for each group. From the box plots, is possible to observe some differences in math scores across racial/ethnic groups. 
+
+
+
+```{r echo=FALSE, fig.width=3 ,fig.height=3}
+gender_plot <- box(data, data$math.score, data$gender, 'Gender', 'Math Score')
+gender_plot
+lunch_plot <- box(data, data$math.score, data$lunch, 'Lunch', 'Math Score')
+lunch_plot
+prep_plot <- box(data, data$math.score, data$test.preparation.course, 'Preparation', 'Math Score')
+prep_plot
+```
+
+The box plots for gender, lunch, and test preparation provide insights into the distribution of math scores across different categories within each variable. 
+
+From the plot it appears that male students tend to have slightly higher median math scores compared to female students.
+
+Also students with a standard lunch have slightly higher median math scores compared to those with a free/reduced lunch.
+
+Last plot suggests that students who completed the test preparation course tend to have higher median math scores compared to those who did not.
+
+
+
+
+```{r echo=FALSE, fig.width=4 ,fig.height=4,  warning=FALSE, message=FALSE}
+# Assuming you have a data frame called 'data' with 'math_score' and 'reading_score' columns
+ggplot(data, aes(x = reading.score, y = math.score)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(x = "Reading Score", y = "Math Score") +
+  ggtitle("Relationship between Math and Reading Scores")+
+  theme(plot.title = element_text(size = 10))
+
+
+ggplot(data, aes(x = writing.score, y = math.score)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(x = "Writing Score", y = "Math Score") +
+  ggtitle("Relationship between Math and Writing Scores")+
+  theme(plot.title = element_text(size = 10))
+
+
+```
+
+The scatter plots between the Math Score (target variable) and the Writing Score, as well as the Reading Score, clearly demonstrate a strong positive correlation. This correlation can be observed from the overall upward trend in the scatter plots, as well as the fitted regression lines that show a positive slope.
+
+The high positive correlation between the Math Score and the Writing Score suggests that students who perform well in writing also tend to perform well in math, and vice versa. Similarly, the correlation between the Math Score and the Reading Score indicates that students with higher reading scores also tend to have higher math scores.
+
+Let's check if there are any NA values:
+
+```{r echo=FALSE}
+colSums(is.na(data))
+```
+
+
+
+
+Now we will encode the categorical data into integers in this way:
+
+
+
+- **Sex** $\rightarrow$ binary : 0 female, 1 - male;
+
+
+
+- **Race Ethincity** $\rightarrow$ numeric:
+
+
+  - 1 - group A
+  - 2 - group B
+  - 3 - group C
+  - 4 - group D
+  
+  
+- **Parental Level of Education** $\rightarrow$ numeric:
+
+
+  - 1 - associate's degree
+  - 2 - bachelor's degree
+  - 3 - high school
+  - 4 - master's degree
+  - 5 - some college
+  
+- **Lunch** $\rightarrow$ binary : 0 free/reduced, 1 - standard;
+
+
+- **Test Preparation Course** $\rightarrow$ binary : 0 completed, 1 - none;
+
+  
+```{r echo=FALSE}
+encode_variables <- function(variable) {
+  category_levels <- unique(variable)
+  category_mapping <- as.integer(factor(category_levels))
+  
+  encoded_variable <- category_mapping[match(variable, category_levels)]
+  return(encoded_variable)
+}
+
+data$race.ethnicity <- encode_variables(data$race.ethnicity)
+data$parental.level.of.education <- encode_variables(data$parental.level.of.education)
+data$test.preparation.course <- encode_variables(data$test.preparation.course)
+data$gender <- encode_variables(data$gender)
+data$lunch <- encode_variables(data$lunch)
+data$gender <- data$gender - 1
+data$lunch <- data$lunch - 1
+data$test.preparation.course <- data$test.preparation.course - 1
+```
+
+
+The dataset is transformed and look this way now: 
+
+
+```{r}
+head(data,10)
+```
+
+
+To ensure accurate predictions and evaluate model performance, we split the dataset into two parts: a training set (85% of the observations) and a test set. The training set is used to build the model, while the test set is reserved for predicting math score and assessing model effectiveness.
+
+
+
+```{r}
+
+set.seed(123)
+indexes <- sample(dim(data)[1], size = ceiling(dim(data)[1] * 0.85))
+train <- data[indexes, ]
+test <- data[-indexes, ]
+target <- test[, c("math.score")]
+test[, c("math.score")] <- NULL
+
+```
+
+
+
+<font size="5"> **2. Linear Regression Model for Predicting Math Score** </font>
+
+In the linear regression model, the Math Score is considered as the target variable. This model assumes that the data are random samples from a normal distribution, where the mean is a linear function of the predictors.
+
+The aim of this analysis is to build a linear regression model to predict the Math Score based on various predictor variables. By examining the relationship between the Math Score and the predictors, we can estimate the model coefficients and make predictions on the Math Score for new observations.
+
+The multivariate linear regression model can be expressed as:
+ 
+$y_i \sim N( \mu_i,\sigma^2)$
+
+$\mu_i = \alpha + \beta_1 \cdot x_1 + ... + \beta_p \cdot x_p$
+
+where:
+
+- **$y_i$** is our target variable.
+
+- The predictors are denoted as **$x_i$**.
+
+- **$\beta = (\alpha,\beta_1, \beta_2,..., \beta_p)$** is the vector of model coefficients.
+
+We have $7$ parameters(+$\alpha$), so $p=7$:
+
+- **$\alpha \in \mathbb{R}$, $\alpha \sim N(0,10000)$**
+
+- **$\beta_1,..,\beta_7 \in \mathbb{R}$, $\beta_i \sim N(0,10000)$**
+
+- **$\sigma \in [0,100]$, $\sigma\sim Unif(0,100)$**
+
+For better interpretability we will denote:
+
+$\beta_1 = \beta_{gender}$, $\beta_2 = \beta_{race}$, $\beta_3 = \beta_{parenteduclevel}$,
+$\beta_4 = \beta_{lunch}$, $\beta_5 = \beta_{preplevel}$, $\beta_6 = \beta_{writing}$,
+$\beta_7 = \beta_{reading}$
+
+In this model, the target variable (Math Score) is represented by the linear combination of the predictor variables: Gender, Race, Parent Education Level, Lunch, Test Preparation Level, Writing Score, and Reading Score. The coefficients $\beta_1$ to $\beta_7$ represent the influence of each predictor on the Math Score. The intercept $\alpha$ captures the baseline Math Score when all predictors are zero.
+
+To estimate the model parameters, we used non informative priors, so all possible values approximately equally likely, assuming a normal distribution for the coefficients with a mean of zero and a large standard deviation(low precision). Also, we consider a uniform prior distribution for the standard deviation $\sigma$, reflecting the possible range of values for the Math Score, infact I choose a uniform distribution in the range $[0, 100]$ as the prior.
+
+
+To approximate the posterior distribution of the target variable and the model coefficients, we can utilize Monte Carlo methods, such as Markov Chain Monte Carlo (MCMC). These methods allow us to draw samples from the posterior distribution, enabling inference and estimation of the model parameters.
+
+We aim to learn more about the variables that affect math scores by building this linear regression model. We also aim to provide a solid framework for predicting math scores based on the provided predictor variables.
+
+Let's start with our model(score for student i):
+ 
+$score_i = \alpha + \beta_{gender} \cdot gender_i + \beta_{race} \cdot race_i + \beta_{parenteduclevel} \cdot parenteduclevel_i + \\\beta_{lunch} \cdot lunch_i + \beta_{prep\_level} \cdot preparlevel_i + \beta_{writing} \cdot writing_i + \beta_{reading} \cdot reading_i$ 
+
+```{r results='hide'}
+jags_data <- list(
+  gender = train$gender,
+  race = train$race.ethnicity,
+  parent_educ_level = train$parental.level.of.education,
+  lunch = train$lunch,
+  prep_level = train$test.preparation.course,
+  math_score = train$math.score,
+  writing_score = train$writing.score,
+  reading_score = train$reading.score,
+  N = dim(train)[1]
+)
+
+# Define the parameters to be estimated
+parameters <- c("alpha", "beta_gender", "beta_race","beta_parent_educ_level",
+                "beta_lunch","beta_prep_level","beta_writing","beta_reading", "sigma")
+
+# Initial parameter values for the MCMC sampler
+inits <- list(
+  list(
+    alpha=rnorm(1), beta_gender=rnorm(1), beta_race=rnorm(1), beta_parent_educ_level=rnorm(1), 
+    beta_lunch=rnorm(1), beta_prep_level=rnorm(1), beta_writing=rnorm(1), 
+    beta_reading=rnorm(1), sigma=runif(0,1000)
+  ),
+  list(
+    alpha=rnorm(1), beta_gender=rnorm(1), beta_race=rnorm(1), beta_parent_educ_level=rnorm(1), 
+    beta_lunch=rnorm(1), beta_prep_level=rnorm(1), beta_writing=rnorm(1), 
+    beta_reading=rnorm(1), sigma=runif(0,1000)
+  )
+)
+
+
+# Run the MCMC chain with one chain
+set.seed(123)
+scoresjags <- jags(
+  data = jags_data,
+  inits = inits,
+  parameters.to.save = parameters,
+  model.file = "jags_mandara_one.txt",
+  n.chains = 2,
+  n.iter = 50000,
+  n.burnin = 5000,
+  n.thin = 10
+)
+
+```
+
+
+```{r}
+scoresjags
+```
+
+
+We can gain a lot regards our model parameters' characteristics by examining their posterior distributions.
+
+- **Mean**: The mean reflects the central tendency of the posterior distribution and serves as a point estimate for each parameter.
+
+- **Standard Deviation**: Each parameter's standard deviation reveals the degree of uncertainty surrounding its estimation. Wider credible intervals are implied by higher standard deviations for the parameter's point estimate. The parameter in our model with the highest posterior uncertainty is $\alpha$.
+
+- **Quantiles**: Additional details about the parameter estimations are provided by the quantiles of the marginal posterior distribution. The 95% credible interval can be thought of as having boundaries at the 2.5% and 97.5% quantiles, giving a range of possible values for the parameter.
+
+- **Gelman-Rubin diagnostic**, often referred to as Rhat. Rhat compares the variation within each chain to the variation between chains. If the chains have converged, Rhat should be close to 1. Values greater than 1 suggest lack of convergence, indicating that the chains have not reached equilibrium.
+
+In this, since all Rhat values are approximately 1.01, it suggests that the chains have converged and reached equilibrium. 
+
+
+The $beta_{gender}$ coefficient has a mean of 13.040. This suggests that, on average, there is a positive association between the gender predictor and the Math Score. For each unit increase in the gender predictor, the Math Score is expected to increase by approximately 13.040.
+
+
+Similarly, the other coefficients $beta_{lunch}$, $beta_{parent_educ_level}$, $beta_{prep_level}$, $beta_{race}$, $beta_{reading}$, $beta_{writing}$ indicate the expected change in the Math Score associated with a one-unit increase in the respective predictor.
+
+
+The deviance measure contains information about the fit of our model to the data. In general, a lower deviance value indicates a better fit, as it reflects higher likelihood for observed data points. It helps us assess how well our model captures the patterns and relationships present in the data.
+
+In this case, the effective sample size (n.eff) is reported as 9000(2*(50000-5000)/10) for all parameters except for $\beta_{race}$, which has an effective sample size of 3100, and $\sigma$, which has an effective sample size of 1900. The effective sample size represents the number of independent samples obtained from the MCMC chains.
+
+
+The effective sample size is a measure that takes into account the autocorrelation in the saved samples. It is calculated as a fraction of the total number of samples saved from the chains, adjusted for thinning (in our case, a thinning interval of 10). In our scenario, the maximum possible effective sample size is achieved, indicating that the samples are nearly independent and the autocorrelation is low.
+
+It's important to note that the effective sample size is a measure of the number of independent samples, and a higher effective sample size generally leads to more reliable and precise estimates of the posterior distribution.
+
+
+
+
+
+<font size="5"> **3. MCMC diagnostics** </font>
+
+By creating simulations from this distribution, MCMC sampling aims to approximate the posterior distribution. It is necessary to evaluate the MCMC samples' reliability in reflecting the posterior, though.
+
+<font size="4">**3.1 Traceplots and posterior distributions** </font>
+
+
+Traceplots and posterior distributions can be examined to determine the reliability of MCMC samples. These graphs offer useful details about the convergence and behaviour of the MCMC chain.
+
+
+The progression of MCMC sample values along the iterations is shown using traceplots. The chain has converged when the traceplot is stable and smooth, appropriately capturing the posterior distribution. On the other side, it indicates that the chain may need additional iterations to adequately represent the distribution if the traceplot shows patterns or chaotic behaviour.
+
+
+The probability density functions of the parameter estimates are shown by posterior distributions. They help us to see how the posterior distribution is distributed and how its central tendency is shaped. 
+
+
+
+```{r echo=FALSE}
+alpha_chain<-scoresjags$BUGSoutput$sims.array[,1,"alpha"]
+beta_gender_chain<-scoresjags$BUGSoutput$sims.array[,1,"beta_gender"]
+beta_lunch_chain<-scoresjags$BUGSoutput$sims.array[,1,"beta_lunch"]
+beta_parent_educ_level_chain<-scoresjags$BUGSoutput$sims.array[,1,"beta_parent_educ_level"]
+beta_prep_level_chain<-scoresjags$BUGSoutput$sims.array[,1,"beta_prep_level"]
+beta_race_chain<-scoresjags$BUGSoutput$sims.array[,1,"beta_race"]
+beta_reading_chain<-scoresjags$BUGSoutput$sims.array[,1,"beta_reading"]
+beta_writing_chain<-scoresjags$BUGSoutput$sims.array[,1,"beta_writing"]
+sigma_chain<-scoresjags$BUGSoutput$sims.array[,1,"sigma"]
+```
+
+```{r, echo=FALSE ,fig.height=1.5}
+library(ggplot2)
+
+# Create a data frame for plotting
+plot_data <- data.frame(
+  iteration = 1:length(alpha_chain),
+  alpha = alpha_chain,
+  beta_gender = beta_gender_chain,
+  beta_lunch = beta_lunch_chain,
+  beta_parent_educ_level = beta_parent_educ_level_chain,
+  beta_prep_level = beta_prep_level_chain,
+  beta_race = beta_race_chain,
+  beta_reading = beta_reading_chain,
+  beta_writing = beta_writing_chain
+)
+
+# Plot the chains
+plot_alpha <- ggplot(plot_data, aes(x = iteration, y = alpha)) +
+  geom_line(color = "darkgoldenrod2") +
+  labs(title = "Alpha Chain", x = "Iteration", y = "Value")
+
+plot_beta_gender <- ggplot(plot_data, aes(x = iteration, y = beta_gender)) +
+  geom_line(color = "darkgoldenrod2") +
+  labs(title = "Beta Gender Chain", x = "Iteration", y = "Value")
+
+plot_beta_lunch <- ggplot(plot_data, aes(x = iteration, y = beta_lunch)) +
+  geom_line(color = "darkgoldenrod2") +
+  labs(title = "Beta Lunch Chain", x = "Iteration", y = "Value")
+
+plot_beta_parent_educ_level <- ggplot(plot_data, aes(x = iteration, y = beta_parent_educ_level)) +
+  geom_line(color = "darkgoldenrod2") +
+  labs(title = "Beta Parent Education Level Chain", x = "Iteration", y = "Value")
+
+plot_beta_prep_level <- ggplot(plot_data, aes(x = iteration, y = beta_prep_level)) +
+  geom_line(color = "darkgoldenrod2") +
+  labs(title = "Beta Prep Level Chain", x = "Iteration", y = "Value")
+
+plot_beta_race <- ggplot(plot_data, aes(x = iteration, y = beta_race)) +
+  geom_line(color = "darkgoldenrod2") +
+  labs(title = "Beta Race Chain", x = "Iteration", y = "Value")
+
+plot_beta_reading <- ggplot(plot_data, aes(x = iteration, y = beta_reading)) +
+  geom_line(color = "darkgoldenrod2") +
+  labs(title = "Beta Reading Chain", x = "Iteration", y = "Value")
+
+plot_beta_writing <- ggplot(plot_data, aes(x = iteration, y = beta_writing)) +
+  geom_line(color = "darkgoldenrod2") +
+  labs(title = "Beta Writing Chain", x = "Iteration", y = "Value")
+
+# Arrange the plots using grid layout
+grid_arrange <- function(...) {
+  plots <- list(...)
+  n <- length(plots)
+  grid::grid.newpage()
+  heights <- grid::unit(rep(1, n), "null")
+  grid::grid.layout(nrow = n, ncol = 1, heights = heights)
+  for (i in seq_len(n)) {
+    grid::grid.draw(plots[[i]])
+  }
+}
+
+# Display the plots
+grid_arrange(plot_alpha, plot_beta_gender, plot_beta_lunch, plot_beta_parent_educ_level,
+             plot_beta_prep_level, plot_beta_race, plot_beta_reading, plot_beta_writing)
+
+```
+
+
+
+```{r echo=FALSE}
+par(mfrow=c(2,3))
+plot(density(alpha_chain), main="alpha posterior distribution", col="darkgoldenrod2")
+plot(density(beta_gender_chain), main="beta1 posterior distribution", col="darkgoldenrod2")
+plot(density(beta_lunch_chain), main="beta2 posterior distribution", col="darkgoldenrod2")
+plot(density(beta_parent_educ_level_chain), main="beta3 posterior distribution", col="darkgoldenrod2")
+plot(density(beta_prep_level_chain), main="beta4 posterior distribution", col="darkgoldenrod2")
+plot(density(beta_race_chain), main="beta5 posterior distribution", col="darkgoldenrod2")
+par(mfrow=c(2,3))
+plot(density(beta_reading_chain), main="beta6 posterior distribution", col="darkgoldenrod2")
+plot(density(beta_writing_chain), main="beta7 posterior distribution", col="darkgoldenrod2")
+plot(density(sigma_chain), main="sigma posterior distribution", col="darkgoldenrod2")
+```
+
+<font size="4"> **3.2 Convergence** </font>
+
+To ensure the accuracy of the posterior estimates, it is essential to evaluate the convergence of MCMC samples. The Geweke diagnostic, which compares the means of the early and late regions of the Markov chain, is one often used diagnostic technique. These means ought to be close to being equal if the samples have converged.
+
+We can also analyze the empirical average of the parameters over time to observe their convergence behavior. Calculating the average of parameter values at each iteration allows us to monitor how the estimates stabilize and approach their true values.
+
+By examining these convergence diagnostics, we can determine if the MCMC samples accurately reflect the posterior distribution and if the estimates for the model parameters are reliable.
+
+```{r}
+
+jags.mcmc<- as.mcmc(scoresjags)
+
+geweke.diag(jags.mcmc)
+
+```
+
+
+This output indicates the difference between the two sample means divided by their estimated standard error. Lower values of this difference suggest good convergence of the MCMC samples.
+
+Next, we can examine the behavior of the empirical average of the parameters as the number of iterations increases. By calculating the average of the parameter values at each iteration, we can observe how the estimates evolve over time. This analysis provides insights into the stability and convergence of the parameter estimates as more iterations are performed.
+
+
+
+```{r echo=FALSE}
+
+#empty vectors:
+emp_av_alpha<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+emp_av_beta_gender<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+emp_av_beta_lunch<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+emp_av_beta_parent_educ_level<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+emp_av_beta_prep_level<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+emp_av_beta_race<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+emp_av_beta_reading<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+emp_av_beta_writing<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+emp_av_sigma<-rep(0,dim(scoresjags$BUGSoutput$sims.array[,1,])[1])
+
+#empirical average at each time t:
+
+for (i in 1:dim(scoresjags$BUGSoutput$sims.array[,1,])[1]){
+  emp_av_alpha[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"alpha"])[i]/i
+  emp_av_beta_gender[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"beta_gender"])[i]/i
+  emp_av_beta_lunch[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"beta_lunch"])[i]/i
+  emp_av_beta_parent_educ_level[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"beta_parent_educ_level"])[i]/i
+  emp_av_beta_prep_level[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"beta_prep_level"])[i]/i
+  emp_av_beta_race[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"beta_race"])[i]/i
+  emp_av_beta_reading[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"beta_reading"])[i]/i
+  emp_av_beta_writing[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"beta_writing"])[i]/i
+  emp_av_sigma[i]=cumsum(scoresjags$BUGSoutput$sims.array[,1,"sigma"])[i]/i
+}
+```
+
+```{r echo=FALSE}
+
+par(mfrow=c(2,2))
+plot(emp_av_alpha, type="l", xlab="t", ylab="alpha", main="alpha empirical average", col="darkmagenta")
+plot(emp_av_beta_gender,type="l", xlab="t", ylab="beta1",main="beta1 empirical average", col="darkmagenta")
+plot(emp_av_beta_lunch,type="l", xlab="t", ylab="beta2",main="beta2 empirical average", col="darkmagenta")
+plot(emp_av_beta_parent_educ_level,type="l", xlab="t", ylab="beta3",main="beta3 empirical average", col="darkmagenta")
+par(mfrow=c(2,2))
+plot(emp_av_beta_prep_level,type="l", xlab="t", ylab="beta4",main="beta4 empirical average", col="darkmagenta")
+plot(emp_av_beta_race,type="l", xlab="t", ylab="beta5",main="beta5 empirical average", col="darkmagenta")
+plot(emp_av_beta_reading,type="l", xlab="t", ylab="beta6",main="beta6 empirical average", col="darkmagenta")
+plot(emp_av_beta_writing,type="l", xlab="t", ylab="beta7",main="beta7 empirical average", col="darkmagenta")
+par(mfrow=c(2,2))
+plot(emp_av_sigma,type="l", xlab="t", ylab="sigma",main="sigma empirical average", col="darkmagenta")
+```
+
+As the number of iterations increases, we see that the empirical averages of the parameters initially display large amounts of fluctuation. The averages have however a tendency to stabilise and converge when more iterations are run, showing less variability and getting closer to their true values. The MCMC sampling procedure successfully captured the characteristics of the posterior distribution based on the convergence behaviour.
+
+
+
+<font size="4"> **3.3 Auto-correlation** </font>
+
+Auto-correlation measures the degree of dependence between consecutive samples in the MCMC chain at different lags. It helps assess the mixing and convergence of the chain by examining the correlation patterns.
+
+By calculating the auto-correlation at various lags, we can determine the level of independence between MCMC samples. Ideally, as the lag increases, the auto-correlation should decrease, indicating that the samples become more independent and reliable for parameter estimation.
+
+The small auto-correlation values obtained suggest that the MCMC samples are nearly independent, which is favorable for accurate parameter estimation.
+
+```{r}
+
+autocorr.diag(jags.mcmc)
+
+```
+
+This output show us that not always the autocorrelation decrease when the lag increase, but anyway the autocorrelation values are very small, so the MCMC samples seems to be almost indipendent.
+
+
+<font size="4"> **3.4 Monte Carlo Standard Error** </font>
+
+
+The Monte Carlo Standard Error (MCSE) quantifies the uncertainty in parameter estimates due to sampling error. When dealing with autocorrelated samples, it is important to use the effective sample size (Neff) instead of the total sample size (N) in the MCSE calculation.
+
+The MCSE values for each parameter indicate the level of uncertainty associated with the estimates. A smaller MCSE suggests more precise estimates with lower sampling error, while a larger MCSE indicates greater uncertainty and potential bias in the estimates. Incorporating the effective sample size improves the accuracy of the MCSE calculation, accounting for the correlation among the MCMC samples.
+
+
+```{r}
+mcse(alpha_chain)
+mcse(beta_gender_chain)
+mcse(beta_lunch_chain)
+mcse(beta_parent_educ_level_chain)
+mcse(beta_prep_level_chain)
+mcse(beta_race_chain)
+mcse(beta_reading_chain)
+mcse(beta_writing_chain)
+mcse(sigma_chain)
+
+```
+
+
+<font size="4"> **3.5 Significance of the Parameters** </font>
+
+To check if a result is statistically significant, it is common to examine whether the 95% credible interval (CI) includes the null hypothesis value or not. In the case of parameter estimates, if the CI does not include zero, it suggests that the parameter is statistically significant at the 0.05 level.
+
+
+```{r, echo=FALSE}
+# Define the parameter names
+parameters <- c("alpha", "beta_gender", "beta_lunch", "beta_parent_educ_level", "beta_prep_level", "beta_race", "beta_reading", "beta_writing", "deviance", "sigma")
+
+# Create empty vectors to store the values
+mean_values <- numeric(length(parameters))
+lower_bounds <- numeric(length(parameters))
+upper_bounds <- numeric(length(parameters))
+is_significant <- logical(length(parameters))
+
+# Assign the values from the output
+mean_values <- as.numeric(scoresjags$BUGSoutput$summary[, "mean"])
+std_dev <- as.numeric(scoresjags$BUGSoutput$summary[, "sd"])
+lower_bounds <- as.numeric(mean_values - 1.96 * std_dev)
+upper_bounds <- as.numeric(mean_values + 1.96 * std_dev)
+
+# Check for statistical significance
+is_significant <- (lower_bounds > 0) | (upper_bounds < 0)
+
+# Remove the deviance parameter
+parameters <- parameters[-9]
+mean_values <- mean_values[-9]
+lower_bounds <- lower_bounds[-9]
+upper_bounds <- upper_bounds[-9]
+is_significant <- is_significant[-9]
+
+# Check for statistical significance
+is_significant <- (lower_bounds > 0) | (upper_bounds < 0)
+
+# Create a dataframe with the parameter names and significance information
+data_plot <- data.frame(parameters, mean_values, lower_bounds, upper_bounds, is_significant)
+
+# Plot the statistically significant parameters
+plot <- ggplot(data_plot, aes(x = parameters, y = mean_values, color = is_significant)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower_bounds, ymax = upper_bounds), width = 0.5) +
+  labs(title = "Statistically Significant Parameters",
+       x = "Parameters",
+       y = "Mean Values") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+plot
+
+```
+
+
+We can see that only one parameter is not significant, this information will be useful for the study of the complexity of our model.
+
+
+
+<font size="5"> **4. Prediction of Math Scores**</font>
+
+In this section, we will focus on predicting the Math Score based on our trained model. We will explore two different approaches for prediction.
+
+
+<font size="4"> **4.1 Method 1: Using Mean Posterior Values** </font>
+
+
+The first method involves using the mean posterior values of the model parameters to estimate the real parameters. We can then use these estimated parameters to compute the regression function and predict the Math Scores for each observation in the test dataset.
+
+To implement this method, we calculate the predicted Math Scores as follows:
+
+- We take the mean value of the alpha parameter from the posterior distribution.
+
+- We multiply the mean value of each beta coefficient by the corresponding feature value of each test observation.
+
+- We sum up these values to obtain the predicted Math Score for each test observation.
+
+This process is repeated for each test observation, and the predicted Math Scores are stored in the "pred" variable.
+
+
+```{r}
+
+pred <- numeric(dim(test)[1])
+
+for (i in 1:dim(test)[1]) {
+  pred[i] <- as.numeric(mean(scoresjags$BUGSoutput$sims.list$alpha)) +
+             as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_gender) * test$gender[i]) +
+             as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_race) * test$race.ethnicity[i]) +
+             as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_parent_educ_level) * test$parental.level.of.education[i]) +
+             as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_lunch) * test$lunch[i]) +
+             as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_prep_level) * test$test.preparation.course[i]) +
+             as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_writing) * test$writing.score[i])+
+             as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_reading) * test$reading.score[i])
+  
+}
+
+```
+
+Let's evaluate the RMSE and DIC.
+
+We will employ the Deviance Information Criterion (DIC) to evaluate the performance of various models. DIC is a measurement that considers the number of parameters and is generated from the model’s deviation. It strikes a balance between model complexity and fit.
+
+Different models’ DIC values can be computed and compared. Lower DIC values signify more effective models that offer a better fit to the data while taking model complexity into account.
+
+
+
+```{r}
+rmse_first_method <- sqrt(sum((pred-target)^2)/length(pred))
+rmse_first_method
+dic_first_method <- scoresjags$BUGSoutput$DIC
+dic_first_method
+```
+
+
+
+
+<font size="4"> **4.2 JAGS File-Based Approach** </font>
+
+The second technique estimates the Math Scores for the test observations using the JAGS file. We make an approximation of the posterior predictive distribution of the Math Scores using the Markov chain samples from JAGS.
+
+In each cycle, we extract the parameter values from the Markov chain samples. We determine the anticipated Math Scores for each test observation using these data.
+
+We may approximate the posterior predictive distribution by averaging the projected Math Scores over all iterations, which enables us to make a variety of predictions for the students' Math Scores in the test dataset while taking into account the uncertainty represented by the Markov chain samples.
+
+
+```{r results='hide'}
+
+#let's re-write the dataset in more useful form
+#let's insert also the test observation
+
+jags_data_pred <- list(gender = train$gender,
+                race = train$race.ethnicity,
+                parent_educ_level = train$parental.level.of.education,
+                lunch = train$lunch,
+                prep_level = train$test.preparation.course,
+                math_score = train$math.score,
+                writing_score = train$writing.score,
+                reading_score = train$reading.score,
+                N = dim(train)[1],
+                N_test = dim(test)[1],       
+                gender_test = test$gender,
+                race_test = test$race.ethnicity,
+                parent_educ_level_test = test$parental.level.of.education,
+                lunch_test = test$lunch,
+                prep_level_test = test$test.preparation.course,
+                writing_score_test = test$writing.score,
+                reading_score_test = test$reading.score)
+
+parameters <- c("alpha", "beta_gender", "beta_race","beta_parent_educ_level",
+                "beta_lunch","beta_prep_level","beta_writing","beta_reading", "sigma","pred")
+
+
+#runs the MCMC chain
+set.seed(123)
+scoresjags_pred <- jags(data=jags_data_pred,
+                        inits=inits,
+                        parameters.to.save=parameters,
+                        model.file="jags_mandara_pred.txt",
+                        n.chains=2,
+                        n.iter=50000,
+                        n.burnin = 5000,
+                        n.thin = 10)
+
+```
+
+
+```{r}
+pred_second_method <- scoresjags_pred$BUGSoutput$summary[11:dim(scoresjags_pred$BUGSoutput$summary)[1]-1,1]
+pred_second_method <- sqrt(sum((target-as.numeric(pred_second_method))^2)/length(target))
+pred_second_method
+dic_second_method <- scoresjags_pred$BUGSoutput$DIC
+dic_second_method
+```
+
+The MSE in this case is slightly worst, but as guessed basically the same.
+
+Now that we have obtained point estimates for the Math Scores, we can also calculate and display credible intervals for these estimates using the JAGS output. This provides a measure of uncertainty around our point estimates.
+
+
+```{r , echo=FALSE}
+
+#let's create a matrix in which we will store for each parameter and for each prediction the credible intervals
+row_nam<-rownames(scoresjags_pred$BUGSoutput$summary)
+col_nam<-c("lower_bound", "upper_bound")
+cred_matr<-matrix(NA,nrow=length(row_nam), ncol=length(col_nam), dimnames = list(row_nam,col_nam))
+
+#fill the matrix
+for(i in 1:length(row_nam)){
+  cred_matr[i,1]<- scoresjags_pred$BUGSoutput$summary[i,3]
+  cred_matr[i,2]<- scoresjags_pred$BUGSoutput$summary[i,7]
+}
+
+```
+
+```{r , echo=FALSE}
+#let's see the first values
+cred_matr[10:19,]
+```
+
+
+Now focusing on the predictions of the Math Scores, we will display the predicted scores along with their corresponding 95% credible intervals and the actual scores for comparison. This allows us to assess the accuracy of our predictions.
+
+
+```{r echo=FALSE}
+
+plotCI(scoresjags_pred$BUGSoutput$summary[24:48, 1], ui = cred_matr[24:48, 2], li = cred_matr[24:48, 1], col = 'chocolate1', xlab = 'observations', ylab = 'math score')
+
+points(x = c(1:25), y = target[15:39], col = "chartreuse4", lwd = 2, pch = 8)
+
+legend("topleft", legend = c("real math score", "math score prediction / middle point of CI"),
+       col = c("chartreuse4", "chocolate1"), lwd = c(NA, 2), pch = c(8, 1), cex = 0.8, bty = 'n')
+
+title(main = 'CI of predictions and response variable', col.main = 'darkblue', font.main = 4)
+
+
+```
+
+
+
+
+
+<font size="5"> **5. Additional Statistical Models** </font>
+
+The performance of the model for predicting the Math Scores is examined using a variety of strategies in the sections that follow. These methods consist of:
+
+- Examining the relationship between the target variable and additional characteristics.
+
+- Examining the target variable's non-linear interactions with other features.
+
+- Including multiplicative predictors (interaction variables) in the model.
+
+The association between each variable and the Math Scores is examined at in order to choose which variables to include in our model. It makes sense to include elements with a high degree of correlation to the target variable.
+
+
+<font size="4"> **5.1 Analyzing Correlation** </font>
+
+To improve our model, we need to assess the correlation between each variable and the target variable, Math Score. By examining the correlation matrix and considering variables with a high correlation, we can identify potential predictors for our model.
+
+```{r, echo=FALSE}
+#colnames(data)
+cor_matrix <- cor(data)
+
+corrplot(cor_matrix, method = "number", type = "lower", tl.col = "black",
+         tl.srt = 45, tl.cex = 0.8, number.cex = 0.8)
+
+```
+
+
+Given this correlation plot and also considering the result obtained in the section **3.5**, let's the the RMSE value for the same model without considering $\beta_{parenteduclevel}$.
+
+
+```{r results='hide'}
+jags_data_mod <- list(
+  gender = train$gender,
+  race = train$race.ethnicity,
+  lunch = train$lunch,
+  prep_level = train$test.preparation.course,
+  math_score = train$math.score,
+  writing_score = train$writing.score,
+  reading_score = train$reading.score,
+  N = dim(train)[1]
+)
+
+# Define the parameters to be estimated
+parameters_mod <- c("alpha", "beta_gender", "beta_race",
+                "beta_lunch","beta_prep_level","beta_writing","beta_reading", "sigma")
+
+# Initial parameter values for the MCMC sampler
+inits_mod <- list(
+  list(
+    alpha=rnorm(1), beta_gender=rnorm(1), beta_race=rnorm(1),
+    beta_lunch=rnorm(1), beta_prep_level=rnorm(1), beta_writing=rnorm(1), 
+    beta_reading=rnorm(1), sigma=runif(0,1000)
+  ),
+  list(
+    alpha=rnorm(1), beta_gender=rnorm(1), beta_race=rnorm(1),
+    beta_lunch=rnorm(1), beta_prep_level=rnorm(1), beta_writing=rnorm(1), 
+    beta_reading=rnorm(1), sigma=runif(0,1000)
+  )
+  
+)
+
+# Run the MCMC chain with one chain
+set.seed(123)
+scoresjags_mod <- jags(
+  data = jags_data_mod,
+  inits = inits_mod,
+  parameters.to.save = parameters_mod,
+  model.file = "jags_mandara_one_mod.txt",
+  n.chains = 2,
+  n.iter = 50000,
+  n.burnin = 5000,
+  n.thin = 10
+)
+
+```
+
+
+Evaluating as before...
+
+
+```{r, echo=FALSE}
+
+pred_mod <- numeric(dim(test)[1])
+
+for (i in 1:dim(test)[1]) {
+  pred_mod[i] <- as.numeric(mean(scoresjags_mod$BUGSoutput$sims.list$alpha)) +
+             as.numeric(mean(scoresjags_mod$BUGSoutput$sims.list$beta_gender) * test$gender[i]) +
+             as.numeric(mean(scoresjags_mod$BUGSoutput$sims.list$beta_race) * test$race.ethnicity[i]) +
+             as.numeric(mean(scoresjags_mod$BUGSoutput$sims.list$beta_lunch) * test$lunch[i]) +
+             as.numeric(mean(scoresjags_mod$BUGSoutput$sims.list$beta_prep_level) * test$test.preparation.course[i]) +
+             as.numeric(mean(scoresjags_mod$BUGSoutput$sims.list$beta_writing) * test$writing.score[i])+
+             as.numeric(mean(scoresjags_mod$BUGSoutput$sims.list$beta_reading) * test$reading.score[i])
+  
+}
+```
+
+```{r}
+rmse_mod <- sqrt(sum((pred_mod-target)^2)/length(pred))
+rmse_mod
+dic_mod <- scoresjags_mod$BUGSoutput$DIC
+dic_mod
+```
+
+
+
+
+So we can notice that the last model has a higher RMSE that the first model, but a smaller value of DIC. 
+
+
+<font size="4"> **5.2 Nonlinear Relationships** </font>
+
+We can investigate the possibility of include nonlinear relationships even if it appears that the variables in our model largely have a linear relationship with the Math Score. Variables may need to be transformed, or nonlinear elements like squared or interaction terms may need to be included. We may discover if these nonlinear models offer more accurate predictions for the Math Score by evaluating their performance and contrasting it with the original linear model.
+
+
+```{r results='hide', warning=FALSE, message =FALSE}
+
+# Define the parameters to be estimated
+parameters_im <- c("alpha", "beta_gender", "beta_race","beta_gender_lunch",
+                  "beta_lunch","beta_prep_level","beta_writing","beta_reading", "sigma")
+
+# Initial parameter values for the MCMC sampler
+inits_1 <- list(
+  list(
+    alpha=rnorm(1), beta_gender=rnorm(1), beta_race=rnorm(1),
+    beta_lunch=rnorm(1), beta_prep_level=rnorm(1), beta_writing=rnorm(1), 
+    beta_reading=rnorm(1), beta_gender_lunch=rnorm(1), sigma=runif(0,1000)
+  ),
+  list(
+    alpha=rnorm(1), beta_gender=rnorm(1), beta_race=rnorm(1),
+    beta_lunch=rnorm(1), beta_prep_level=rnorm(1), beta_writing=rnorm(1), 
+    beta_reading=rnorm(1), beta_gender_lunch=rnorm(1), sigma=runif(0,1000)
+  )
+)
+
+
+# Run the MCMC chain with one chains
+set.seed(123)
+scoresjags_improve <- jags(
+  data = jags_data,
+  inits = inits_1,
+  parameters.to.save = parameters_im,
+  model.file = "jags_mandara_improve.txt",
+  n.chains = 2,
+  n.iter = 50000,
+  n.burnin = 5000,
+  n.thin = 10
+)
+
+```
+
+```{r}
+pred_improve <- numeric(dim(test)[1])
+
+for (i in 1:dim(test)[1]) {
+  pred_improve[i] <- as.numeric(mean(scoresjags_improve$BUGSoutput$sims.list$alpha)) +
+             as.numeric(mean(scoresjags_improve$BUGSoutput$sims.list$beta_gender) * test$gender[i]) +
+             as.numeric(mean(scoresjags_improve$BUGSoutput$sims.list$beta_race) * test$race.ethnicity[i]) +
+             as.numeric(mean(scoresjags_improve$BUGSoutput$sims.list$beta_lunch) * test$lunch[i]) +
+             as.numeric(mean(scoresjags_improve$BUGSoutput$sims.list$beta_prep_level) * test$test.preparation.course[i]) +
+             as.numeric(mean(scoresjags_improve$BUGSoutput$sims.list$beta_writing) * test$writing.score[i])+
+             as.numeric(mean(scoresjags_improve$BUGSoutput$sims.list$beta_reading) * test$reading.score[i])
+  
+}
+
+rmse_improve <- sqrt(sum((pred_improve-target)^2)/length(target))
+rmse_improve
+dic_improve <- scoresjags_improve$BUGSoutput$DIC
+dic_improve
+```
+
+We can notice in this case that we have a smaller value of RMSE but a higher value of DIC.
+So we stick with the **scoresjags_mod** model(the one using the first model and removing the $\beta_{prepeduclevel}$ parameter)
+
+
+<font size="5"> **6. Comparison with frequentist inference** </font>
+
+
+To perform a comparative analysis with frequentist inference, it's possible to compare the estimates of the parameters and predictions obtained from the Bayesian model(let's evaluate the first one) with the results obtained from a frequentist model.
+
+Remember that the first model was:
+
+$score_i = \alpha + \beta_{race} \cdot gender_i + \beta_{race} \cdot race_i + \beta_{parenteduclevel} \cdot parenteduclevel_i + \\\beta_{lunch} \cdot lunch_i + \beta_{prep\_level} \cdot preparlevel_i + \beta_{writing} \cdot writing_i + \beta_{reading} \cdot reading_i$ 
+
+
+Here's an example of this comparative analysis:
+
+
+
+```{r}
+
+first_model<- lm( math.score ~  gender+ race.ethnicity + parental.level.of.education +
+                  lunch + test.preparation.course + reading.score + writing.score , data=train)
+
+first_model
+
+
+
+```
+
+
+```{r echo=FALSE}
+#let's compare the coefficients
+
+
+two_models <- matrix(c(round(first_model$coefficients[1],3),round(as.numeric(mean(scoresjags$BUGSoutput$sims.list$alpha)),3),
+            round(first_model$coefficients[2],3),round(as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_gender)),3),
+            round(first_model$coefficients[3],3),round(as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_race)),3),
+            round(first_model$coefficients[4],3),round(as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_parent_educ_level)),3),
+            round(first_model$coefficients[5],3),round(as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_lunch)),3),
+            round(first_model$coefficients[6],3),round(as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_prep_level)),3),
+            round(first_model$coefficients[7],3),round(as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_read)),3),
+            round(first_model$coefficients[8],3),round(as.numeric(mean(scoresjags$BUGSoutput$sims.list$beta_writing)) ,3)), ncol=2,byrow=T)
+
+colnames(two_models)<-c("frequentist" , "bayesian")
+rownames(two_models)<-c("alpha","beta_gender","beta_race","beta_parent_educ_level",
+                        "beta_lunch","beta_prep_level","beta_reading","beta_writing")
+
+two_models
+
+```
+
+
+Now let's predict on the test data and after let's show the difference between the previous prediction and the new one.
+
+
+```{r}
+
+pred_lm <- predict(first_model, test)
+
+sqrt(sum((pred_lm-target)^2)/length(pred_lm))
+
+```
+
+
+
+```{r echo=FALSE}
+
+pred_comp <-matrix(c(pred_lm,pred,(pred-as.numeric(pred_lm))), ncol=3)
+pred_comp <-round(pred_comp,2)
+colnames(pred_comp) <- c("frequentis pred." , "  bayesian pred.", "  difference")
+new_row_names <- paste0("pred_", 1:150)
+rownames(pred_comp) <- new_row_names
+```
+
+Let's print the first 15 predictions.
+
+```{r echo=FALSE}
+
+# Assign the new row names to the data frame or matrix
+
+pred_comp[1:15,1:3]
+
+```
+
+
+
+<font size="5"> **7. Final observations** </font>
+
+The comparison between the frequentist and Bayesian estimates for the parameters shows that there is generally good agreement between the two approaches. The parameter estimates are similar, indicating that both methods provide consistent results.
+
+Examining the magnitude of the parameters can provide insights into the relative importance of different factors in influencing student performance. Larger magnitude parameters suggest stronger associations between the corresponding variables and the outcome (in this case, student math performance).
+
+Here are some potential actions or strategies that can be explored to improve student performance:
+
+- **Gender**: Given that gender significantly affects math test scores, you may want to consider gender-specific educational interventions or teaching practises that can help reduce the achievement gap between male and female students.
+
+- **Race/Ethnicity**: Promoting inclusion and cultural understanding in the classroom is essential because race and ethnicity have a significant impact on students' academic performance. Programmes that help students from different racial and ethnic backgrounds, promote diversity, and address any potential biases or barriers should be implemented.
+
+- **Lunch**: Access to healthy food can improve a student's academic performance and overall health. Explore programmes like school meal programmes or collaborations with community organisations to guarantee that kids, especially those from poor families, have access to nutritious food.
+
+- **Preparation Level**: Helping students prepare for tests and exams can have a favourable effect on their performance. To assist students in improving their preparation methods, take into consideration providing study skills workshops, tutoring services, or online learning environments.

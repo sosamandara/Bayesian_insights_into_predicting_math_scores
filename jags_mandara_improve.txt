@@ -1,0 +1,24 @@
+# MODEL SPECIFICATION
+model {
+  for (i in 1:N) {
+    math_score[i] ~ dnorm(mu_math[i], precision)
+  
+    mu_math[i] <- alpha + beta_gender * gender[i] + beta_race  * race[i] 
+                  + beta_lunch * lunch[i] + beta_prep_level * prep_level[i] 
+                  + beta_writing * writing_score[i] + beta_reading * reading_score[i]
+                  + beta_gender_lunch * gender[i] * lunch[i]
+    
+  }
+
+  # Prior distributions
+  alpha ~ dnorm(0, 0.01)
+  beta_gender ~ dnorm(0, 0.01)
+  beta_race ~ dnorm(0, 0.01)
+  beta_lunch ~ dnorm(0, 0.01)
+  beta_prep_level ~ dnorm(0, 0.01)
+  beta_writing ~ dnorm(0, 0.01)
+  beta_reading ~ dnorm(0, 0.01)
+  beta_gender_lunch ~ dnorm(0, 0.01)
+  sigma ~ dunif(0, 100)  # Standard deviation
+  precision <- 1 / (sigma * sigma)
+}

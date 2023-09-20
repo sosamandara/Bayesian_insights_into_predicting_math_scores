@@ -1,1 +1,0 @@
-# Bayesian_insights_into_predicting_math_scores

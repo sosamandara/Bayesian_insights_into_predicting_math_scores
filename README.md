@@ -35,7 +35,7 @@ The dataset consists of the following variables:
 Some plots for the Exploratory Data Analysis
 |       |       | 
 :-------------------------:|:-------------------------: 
-<img width="485" alt="plot1" src="https://github.com/sosamandara/Bayesian_insights_into_predicting_math_scores/issues/1#issue-1905629271"> | <img width="485" alt="plot2" src="https://github.com/sosamandara/Bayesian_insights_into_predicting_math_scores/issues/1#issuecomment-1728355763">
+<img width="485" alt="plot1" src="https://github.com/sosamandara/Bayesian_insights_into_predicting_math_scores/issues/1#issue-1905629271"> 
 
 The scatter plots between the Math Score (target variable) and the Writing Score, as well as the Reading Score, clearly demonstrate a strong positive correlation. This correlation can be observed from the overall upward trend in the scatter plots, as well as the fitted regression lines that show a positive slope.
 

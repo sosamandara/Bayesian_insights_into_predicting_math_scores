@@ -35,11 +35,11 @@ The dataset consists of the following variables:
 Some plots for the Exploratory Data Analysis
 |       |       | 
 :-------------------------:|:-------------------------: 
-<img width="485" alt="plot1" src="https://github.com/sosamandara/Bayesian_insights_into_predicting_math_scores/issues/1#issue-1905629271"> | <img width="485" alt="plot2" src="https://github.com/sosamandara/Bayesian_insights_into_predicting_math_scores/issues/1#issuecomment-1728355763">
+<img width="485" alt="plot1" src="https://user-images.githubusercontent.com/113529675/271363258-a6718f0f-454a-4d0d-b8c9-9d581a6e537a.png"> | <img width="485" alt="plot2" src="https://user-images.githubusercontent.com/113529675/271363384-7c15c59a-c829-4dd7-82d9-16b6df787a95.png">
 
 The scatter plots between the Math Score (target variable) and the Writing Score, as well as the Reading Score, clearly demonstrate a strong positive correlation. This correlation can be observed from the overall upward trend in the scatter plots, as well as the fitted regression lines that show a positive slope.
 
-<img width="400" alt="plot3" src="https://github.com/sosamandara/Bayesian_insights_into_predicting_math_scores/issues/1#issuecomment-1728357215"> | <img width="400" alt="plot4" src="https://github.com/sosamandara/Bayesian_insights_into_predicting_math_scores/issues/1#issuecomment-1728358448">
+<img width="400" alt="plot3" src="https://user-images.githubusercontent.com/113529675/271363431-212d17f9-ec51-46cc-80ba-82fcf13b0a7f.png"> | <img width="400" alt="plot4" src="https://user-images.githubusercontent.com/113529675/271363493-b469ec03-142d-41b9-b9c8-ab50f8beb45c.png">
 
 See the `math_score.pdf` file for a deeper analysis.
 
